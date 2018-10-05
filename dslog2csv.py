@@ -182,13 +182,25 @@ if __name__ == '__main__':
             newfiles.extend(glob.glob(a))
         args.files = newfiles
 
-    outcsv = csv.DictWriter(sys.stdout, fieldnames=DSLogParser.CMP_OUTPUT_COLUMNS, extrasaction='ignore')
+    col = ['inputfile', ]
+    col.extend(DSLogParser.OUTPUT_COLUMNS)
+    if args.output:
+        outstrm = open(args.output, 'wb')
+    else:
+        outstrm = sys.stdout
+    outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
     outcsv.writeheader()
 
-    dsparser = DSLogParser(args.files[0])
-    for rec in dsparser.read_records():
-        # unpack the PDP currents to go into the columns easier
-        for i in range(16):
-            rec['pdp_{}'.format(i)] = rec['pdp_currents'][i]
+    for fn in args.files:
+        dsparser = DSLogParser(args.files[0])
+        for rec in dsparser.read_records():
+            rec['inputfile'] = fn
 
-        outcsv.writerow(rec)
+            # unpack the PDP currents to go into columns more easily
+            for i in range(16):
+                rec['pdp_{}'.format(i)] = rec['pdp_currents'][i]
+
+            outcsv.writerow(rec)
+
+    if args.output:
+        outstrm.close()
