@@ -71,11 +71,12 @@ class DSLogParser():
 
     def read_record_v3(self):
         data_bytes = self.strm.read(10)
-        if not data_bytes:
+        if not data_bytes or len(data_bytes) < 10:
             return None
         pdp_bytes = self.strm.read(25)
-        if not data_bytes:
+        if not pdp_bytes or len(pdp_bytes) < 25:
             # should not happen!!
+            print('ERROR: no data for PDP. Unexpected end of file. Quiting', file=sys.stderr)
             return None
 
         res = {'time': self.record_num * self.record_time_offset}
@@ -169,7 +170,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if sys.platform == "win32":
-        import glob, msvcrt
+        import glob
+        import msvcrt
 
         # csv.writer requires binary output file
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
@@ -190,5 +192,3 @@ if __name__ == '__main__':
             rec['pdp_{}'.format(i)] = rec['pdp_currents'][i]
 
         outcsv.writerow(rec)
-
-    print('found {} records'.format(dsparser.record_num), file=sys.stderr)
