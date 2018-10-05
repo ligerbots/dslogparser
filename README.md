@@ -1,6 +1,8 @@
 # dslog2csv
 Convert FRC DSLog files to CSV file
 
+WARNING: the 8 status values (ds tele, robot tele, etc) should not be trusted, yet.
+
 # Reference Sources:
   https://www.chiefdelphi.com/forums/showthread.php?p=1556451
 
