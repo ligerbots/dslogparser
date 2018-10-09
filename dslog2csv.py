@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# Note: should work correctly with either Python 2 or 3
+
+from __future__ import print_function
+
 # Parse the FRC drive station logs which are packed binary data
 
 # Notes on comparison to DSLog-Parse:
@@ -26,18 +30,6 @@ class DSLogParser():
         'pdp_total_current',
         # don't output these. They are not correct
         # 'pdp_resistance', 'pdp_voltage', 'pdp_temp'
-    ]
-
-    # columns order matching the DSLog-Reader output (except delete their time value first)
-    CMP_OUTPUT_COLUMNS = [
-        'round_trip_time', 'packet_loss', 'voltage', 'rio_cpu',
-        'can_usage',
-        'ds_disabled', 'ds_auto', 'ds_tele',
-        'robot_disabled', 'robot_auto', 'robot_tele',
-        'brownout', 'watchdog',
-        'pdp_0', 'pdp_1', 'pdp_2', 'pdp_3', 'pdp_4', 'pdp_5', 'pdp_6', 'pdp_7',
-        'pdp_8', 'pdp_9', 'pdp_10', 'pdp_11', 'pdp_12', 'pdp_13', 'pdp_14', 'pdp_15',
-        'pdp_total_current',
     ]
 
     def __init__(self, input_file):
@@ -76,7 +68,7 @@ class DSLogParser():
         pdp_bytes = self.strm.read(25)
         if not pdp_bytes or len(pdp_bytes) < 25:
             # should not happen!!
-            print('ERROR: no data for PDP. Unexpected end of file. Quiting', file=sys.stderr)
+            print('ERROR: no data for PDP. Unexpected end of file. Quitting', file=sys.stderr)
             return None
 
         res = {'time': self.record_num * self.record_time_offset}
@@ -94,13 +86,14 @@ class DSLogParser():
     def unpack_bits(raw_value):
         '''Unpack and invert the bits in a byte'''
 
-        status_bits = bitstring.Bits(raw_value)
+        status_bits = bitstring.Bits(bytes=raw_value)
         # invert them all
         return [not b for b in status_bits]
 
     def parse_data_v3(self, data_bytes):
         raw_values = struct.unpack('>BBHBcBBH', data_bytes)
         status_bits = self.unpack_bits(raw_values[4])
+        # print('bits', self.record_num, raw_values[4], int.from_bytes(raw_values[4], byteorder='big'), status_bits)
 
         res = {
             'round_trip_time': self.shifted_float(raw_values[0], 1),
@@ -129,11 +122,12 @@ class DSLogParser():
 
         # from DSLog-Reader
         # these make more sense in terms of defining a packing scheme, so stick with them
+        # looks like this is a 64-bit int holding 6 10-bit numbers and they ignore the extra 4 bits
         pdp_offsets = (8, 18, 28, 38, 48, 58,
                        72, 82, 92, 102, 112, 122,
                        136, 146, 156, 166)
 
-        bits = bitstring.Bits(pdp_bytes)
+        bits = bitstring.Bits(bytes=pdp_bytes)
 
         vals = []
         for offset in pdp_offsets:
