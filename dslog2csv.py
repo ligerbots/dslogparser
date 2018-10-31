@@ -159,7 +159,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DSLog to CSV file')
     parser.add_argument('--output', '-o', help='Output filename (stdout otherwise)')
-    parser.add_argument('files', action='append', help='Input files')
+    parser.add_argument('files', nargs='+', help='Input files')
 
     args = parser.parse_args()
 
@@ -186,7 +186,7 @@ if __name__ == '__main__':
     outcsv.writeheader()
 
     for fn in args.files:
-        dsparser = DSLogParser(args.files[0])
+        dsparser = DSLogParser(fn)
         for rec in dsparser.read_records():
             rec['inputfile'] = fn
 
