@@ -16,6 +16,9 @@ import struct
 import csv
 import bitstring
 
+# Python 2 CSV writer wants binary output, but Py3 want regular
+_USE_BINARY_OUTPUT = sys.version_info[0] == 2
+
 
 class DSLogParser():
     OUTPUT_COLUMNS = [
@@ -164,13 +167,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if sys.platform == "win32":
-        import glob
-        import msvcrt
-
-        # csv.writer requires binary output file
-        msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+        if _USE_BINARY_OUTPUT:
+            # csv.writer requires binary output file
+            import msvcrt
+            msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
 
         # do glob expanding on Windows. Linux/Mac does this automatically.
+        import glob
         newfiles = []
         for a in args.files:
             newfiles.extend(glob.glob(a))
@@ -179,7 +182,7 @@ if __name__ == '__main__':
     col = ['inputfile', ]
     col.extend(DSLogParser.OUTPUT_COLUMNS)
     if args.output:
-        outstrm = open(args.output, 'wb')
+        outstrm = open(args.output, 'wb' if _USE_BINARY_OUTPUT else 'w')
     else:
         outstrm = sys.stdout
     outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
