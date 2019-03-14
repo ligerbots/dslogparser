@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import sys
 import os
+import os.path
 import struct
 import csv
 import bitstring
@@ -161,6 +162,7 @@ class DSLogParser():
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DSLog to CSV file')
+    parser.add_argument('--one-output-per-file', action='store_true', help='Output one CSV per DSLog file')
     parser.add_argument('--output', '-o', help='Output filename (stdout otherwise)')
     parser.add_argument('files', nargs='+', help='Input files')
 
@@ -181,14 +183,27 @@ if __name__ == '__main__':
 
     col = ['inputfile', ]
     col.extend(DSLogParser.OUTPUT_COLUMNS)
-    if args.output:
-        outstrm = open(args.output, 'wb' if _USE_BINARY_OUTPUT else 'w')
+    if not args.one_output_per_file:
+        if args.output:
+            outstrm = open(args.output, 'wb' if _USE_BINARY_OUTPUT else 'w')
+        else:
+            outstrm = sys.stdout
+        outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
+        outcsv.writeheader()
     else:
-        outstrm = sys.stdout
-    outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
-    outcsv.writeheader()
+        outstrm = None
+        outcsv = None
 
     for fn in args.files:
+        if args.one_output_per_file:
+            if outstrm:
+                outstrm.close()
+            outname, _ = os.path.splitext(os.path.basename(fn))
+            outname += '.csv'
+            outstrm = open(outname, 'wb' if _USE_BINARY_OUTPUT else 'w')
+            outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
+            outcsv.writeheader()
+
         dsparser = DSLogParser(fn)
         for rec in dsparser.read_records():
             rec['inputfile'] = fn
@@ -199,5 +214,5 @@ if __name__ == '__main__':
 
             outcsv.writerow(rec)
 
-    if args.output:
+    if args.output or args.one_output_per_file:
         outstrm.close()
