@@ -1,6 +1,7 @@
 # dslog2csv
 Convert FRC DSLog files to CSV file
 
+```
 usage: dslog2csv.py [-h] [--one-output-per-file] [--output OUTPUT] [--event]
                     [--add-match-info] [--matches-only]
                     files [files ...]
@@ -21,7 +22,7 @@ optional arguments:
                         info
   --matches-only        Ignore files which have no match info. Imples add-
                         match-info
-
+```
 
 # Reference Sources:
   https://www.chiefdelphi.com/forums/showthread.php?p=1556451
