@@ -1,6 +1,28 @@
 # dslog2csv
 Convert FRC DSLog files to CSV file
 
+usage: dslog2csv.py [-h] [--one-output-per-file] [--output OUTPUT] [--event]
+                    [--add-match-info] [--matches-only]
+                    files [files ...]
+
+DSLog to CSV file
+
+positional arguments:
+  files                 Input files
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --one-output-per-file
+                        Output one CSV per DSLog file
+  --output OUTPUT, -o OUTPUT
+                        Output filename (stdout otherwise)
+  --event               Input files are EVENT files
+  --add-match-info      Look for EVENT files matching DSLOG files and pull
+                        info
+  --matches-only        Ignore files which have no match info. Imples add-
+                        match-info
+
+
 # Reference Sources:
   https://www.chiefdelphi.com/forums/showthread.php?p=1556451
 

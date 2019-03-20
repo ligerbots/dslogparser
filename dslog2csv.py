@@ -21,6 +21,22 @@ import datetime
 
 # Python 2 CSV writer wants binary output, but Py3 want regular
 _USE_BINARY_OUTPUT = sys.version_info[0] == 2
+MAX_INT64 = 2**63 - 1
+
+
+def read_timestamp(strm):
+    # Time stamp: int64, uint64
+    b1 = strm.read(8)
+    b2 = strm.read(8)
+    if not b1 or not b2:
+        return None
+    sec = struct.unpack('>q', b1)[0]
+    millisec = struct.unpack('>Q', b2)[0]
+
+    # for now, ignore
+    dt = datetime.datetime(1904, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    dt += datetime.timedelta(seconds=(sec + float(millisec) / MAX_INT64))
+    return dt
 
 
 class DSLogParser():
@@ -41,8 +57,8 @@ class DSLogParser():
     def __init__(self, input_file):
         self.strm = open(input_file, 'rb')
 
-        self.record_num = 0
-        self.record_time_offset = 20.0
+        self.record_time_offset = datetime.timedelta(seconds=0.020)
+        self.curr_time = None
 
         self.read_header()
         return
@@ -67,8 +83,7 @@ class DSLogParser():
         if self.version != 3:
             raise Exception("Unknown file version number {}".format(self.version))
 
-        # for now, ignore the file timestamp
-        self.strm.read(16)
+        self.curr_time = read_timestamp(self.strm)
         return
 
     def read_record_v3(self):
@@ -81,11 +96,10 @@ class DSLogParser():
             print('ERROR: no data for PDP. Unexpected end of file. Quitting', file=sys.stderr)
             return None
 
-        res = {'time': self.record_num * self.record_time_offset}
+        res = {'time': self.curr_time}
         res.update(self.parse_data_v3(data_bytes))
         res.update(self.parse_pdp_v3(pdp_bytes))
-        self.record_num += 1
-
+        self.curr_time += self.record_time_offset
         return res
 
     @staticmethod
@@ -166,13 +180,8 @@ class DSLogParser():
 
 
 class DSEventParser():
-    MAX_INT64 = 2**63 - 1
-
     def __init__(self, input_file):
         self.strm = open(input_file, 'rb')
-
-        self.record_num = 0
-        self.record_time_offset = 20.0
 
         self.read_header()
         return
@@ -196,25 +205,11 @@ class DSEventParser():
         self.version = struct.unpack('>i', self.strm.read(4))[0]
         if self.version != 3:
             raise Exception("Unknown file version number {}".format(self.version))
-        self.read_timestamp()  # file starttime
+        read_timestamp(self.strm)  # file starttime
         return
 
-    def read_timestamp(self):
-        # Time stamp: int64, uint64
-        b1 = self.strm.read(8)
-        b2 = self.strm.read(8)
-        if not b1 or not b2:
-            return None
-        sec = struct.unpack('>q', b1)[0]
-        millisec = struct.unpack('>Q', b2)[0]
-
-        # for now, ignore
-        dt = datetime.datetime(1904, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
-        dt += datetime.timedelta(seconds=(sec + float(millisec) / self.MAX_INT64))
-        return dt
-
     def read_record_v3(self):
-        t = self.read_timestamp()
+        t = read_timestamp(self.strm)
         if t is None:
             return None
 
