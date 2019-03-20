@@ -16,6 +16,8 @@ import os.path
 import struct
 import csv
 import bitstring
+import re
+import datetime
 
 # Python 2 CSV writer wants binary output, but Py3 want regular
 _USE_BINARY_OUTPUT = sys.version_info[0] == 2
@@ -43,6 +45,10 @@ class DSLogParser():
         self.record_time_offset = 20.0
 
         self.read_header()
+        return
+
+    def close(self):
+        self.strm.close()
         return
 
     def read_records(self):
@@ -159,14 +165,98 @@ class DSLogParser():
         return res
 
 
+class DSEventParser():
+    MAX_INT64 = 2**63 - 1
+
+    def __init__(self, input_file):
+        self.strm = open(input_file, 'rb')
+
+        self.record_num = 0
+        self.record_time_offset = 20.0
+
+        self.read_header()
+        return
+
+    def close(self):
+        self.strm.close()
+        return
+
+    def read_records(self):
+        if self.version != 3:
+            raise Exception("Unknown file version number {}".format(self.version))
+
+        while True:
+            r = self.read_record_v3()
+            if r is None:
+                break
+            yield r
+        return
+
+    def read_header(self):
+        self.version = struct.unpack('>i', self.strm.read(4))[0]
+        if self.version != 3:
+            raise Exception("Unknown file version number {}".format(self.version))
+        self.read_timestamp()  # file starttime
+        return
+
+    def read_timestamp(self):
+        # Time stamp: int64, uint64
+        b1 = self.strm.read(8)
+        b2 = self.strm.read(8)
+        if not b1 or not b2:
+            return None
+        sec = struct.unpack('>q', b1)[0]
+        millisec = struct.unpack('>Q', b2)[0]
+
+        # for now, ignore
+        dt = datetime.datetime(1904, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        dt += datetime.timedelta(seconds=(sec + float(millisec) / self.MAX_INT64))
+        return dt
+
+    def read_record_v3(self):
+        t = self.read_timestamp()
+        if t is None:
+            return None
+
+        msg_len = struct.unpack('>i', self.strm.read(4))[0]
+        msg = struct.unpack('%ds' % msg_len, self.strm.read(msg_len))[0]
+        msg = msg.decode('ascii')
+
+        return t, msg
+
+
+def find_match_info(filename):
+    rdr = DSEventParser(filename)
+    for t, msg in rdr.read_records():
+        m = re.match(r'FMS Connected:\s+(?P<info>.*)\s*$', msg)
+        if m:
+            rdr.close()
+            return m.group('info')
+    rdr.close()
+    return None
+
+
+def find_event_file(filename):
+    evtname = os.path.splitext(filename)[0] + '.dsevents'
+    if os.path.exists(evtname):
+        return evtname
+    return None
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='DSLog to CSV file')
     parser.add_argument('--one-output-per-file', action='store_true', help='Output one CSV per DSLog file')
     parser.add_argument('--output', '-o', help='Output filename (stdout otherwise)')
+    parser.add_argument('--event', action='store_true', help='Input files are EVENT files')
+    parser.add_argument('--add-match-info', action='store_true', help='Look for EVENT files matching DSLOG files and pull info')
+    parser.add_argument('--matches-only', action='store_true', help='Ignore files which have no match info. Imples add-match-info')
     parser.add_argument('files', nargs='+', help='Input files')
 
     args = parser.parse_args()
+
+    if args.matches_only:
+        args.add_match_info = True
 
     if sys.platform == "win32":
         if _USE_BINARY_OUTPUT:
@@ -181,38 +271,59 @@ if __name__ == '__main__':
             newfiles.extend(glob.glob(a))
         args.files = newfiles
 
-    col = ['inputfile', ]
-    col.extend(DSLogParser.OUTPUT_COLUMNS)
-    if not args.one_output_per_file:
-        if args.output:
-            outstrm = open(args.output, 'wb' if _USE_BINARY_OUTPUT else 'w')
-        else:
-            outstrm = sys.stdout
-        outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
-        outcsv.writeheader()
-    else:
-        outstrm = None
-        outcsv = None
+    if args.event:
+        dsparser = DSEventParser(args.files[0])
+        for t, rec in dsparser.read_records():
+            print(t, rec)
 
-    for fn in args.files:
-        if args.one_output_per_file:
-            if outstrm:
-                outstrm.close()
-            outname, _ = os.path.splitext(os.path.basename(fn))
-            outname += '.csv'
-            outstrm = open(outname, 'wb' if _USE_BINARY_OUTPUT else 'w')
+    else:
+        col = ['inputfile', ]
+        if args.add_match_info:
+            col.append('match_info')
+        col.extend(DSLogParser.OUTPUT_COLUMNS)
+
+        if not args.one_output_per_file:
+            if args.output:
+                outstrm = open(args.output, 'wb' if _USE_BINARY_OUTPUT else 'w')
+            else:
+                outstrm = sys.stdout
             outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
             outcsv.writeheader()
+        else:
+            outstrm = None
+            outcsv = None
 
-        dsparser = DSLogParser(fn)
-        for rec in dsparser.read_records():
-            rec['inputfile'] = fn
+        for fn in args.files:
+            match_info = None
+            if args.add_match_info:
+                evtfn = find_event_file(fn)
+                if evtfn:
+                    match_info = find_match_info(evtfn)
 
-            # unpack the PDP currents to go into columns more easily
-            for i in range(16):
-                rec['pdp_{}'.format(i)] = rec['pdp_currents'][i]
+            if args.matches_only and not match_info:
+                continue
 
-            outcsv.writerow(rec)
+            if args.one_output_per_file:
+                if outstrm:
+                    outstrm.close()
+                outname, _ = os.path.splitext(os.path.basename(fn))
+                outname += '.csv'
+                outstrm = open(outname, 'wb' if _USE_BINARY_OUTPUT else 'w')
+                outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
+                outcsv.writeheader()
 
-    if args.output or args.one_output_per_file:
-        outstrm.close()
+            dsparser = DSLogParser(fn)
+            for rec in dsparser.read_records():
+                rec['inputfile'] = fn
+                rec['match_info'] = match_info
+
+                # unpack the PDP currents to go into columns more easily
+                for i in range(16):
+                    rec['pdp_{}'.format(i)] = rec['pdp_currents'][i]
+
+                outcsv.writerow(rec)
+
+            dsparser.close()
+
+        if args.output or args.one_output_per_file:
+            outstrm.close()
