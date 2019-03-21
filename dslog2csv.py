@@ -18,6 +18,7 @@ import csv
 import bitstring
 import re
 import datetime
+import math
 
 # Python 2 CSV writer wants binary output, but Py3 want regular
 _USE_BINARY_OUTPUT = sys.version_info[0] == 2
@@ -114,6 +115,27 @@ class DSLogParser():
         # invert them all
         return [not b for b in status_bits]
 
+    @staticmethod
+    def uint_from_bytes(bytes, offset, size_in_bits):
+        '''Pull out an unsigned int from an array of bytes, with arbitrary bit start and length'''
+
+        first_byte = math.floor(offset / 8)
+        num_bytes = math.ceil(size_in_bits / 8)
+
+        if num_bytes == 1:
+            uint = struct.unpack_from('>B', bytes, first_byte)[0]
+        elif num_bytes == 2:
+            uint = struct.unpack_from('>H', bytes, first_byte)[0]
+        else:
+            # not needed here, and general case is harder
+            raise Exception('not supported')
+
+        # Need to mask off the incorrect high bits and then shift right to get rid of the incorrect low bits
+        left_bitshift = offset - first_byte * 8
+        right_bitshift = num_bytes * 8 - size_in_bits - left_bitshift
+
+        return (uint & (0xFFFF >> left_bitshift)) >> right_bitshift
+
     def parse_data_v3(self, data_bytes):
         raw_values = struct.unpack('>BBHBcBBH', data_bytes)
         status_bits = self.unpack_bits(raw_values[4])
@@ -151,11 +173,9 @@ class DSLogParser():
                        72, 82, 92, 102, 112, 122,
                        136, 146, 156, 166)
 
-        bits = bitstring.Bits(bytes=pdp_bytes)
-
         vals = []
         for offset in pdp_offsets:
-            vals.append(self.shifted_float(bits[offset:offset+10].uint, 3))
+            vals.append(self.shifted_float(self.uint_from_bytes(pdp_bytes, offset, 10), 3))
 
         # values are 15 through 0, so reverse the list
         # note: DSLog-Reader did not reverse these. Don't know who to believe.
@@ -168,11 +188,11 @@ class DSLogParser():
         # the scaling on R, V and T are almost certainly not correct
         # need to find a reference for those values
         res = {
-            'pdp_id': bits[0:8].uint,
+            'pdp_id': self.uint_from_bytes(pdp_bytes, 0, 8),
             'pdp_currents': vals,
-            'pdp_resistance': bits[176:184].uint,
-            'pdp_voltage': bits[184:192].uint,
-            'pdp_temp': bits[192:200].uint,
+            'pdp_resistance': self.uint_from_bytes(pdp_bytes, 176, 8),
+            'pdp_voltage': self.uint_from_bytes(pdp_bytes, 184, 8),
+            'pdp_temp': self.uint_from_bytes(pdp_bytes, 192, 8),
             'pdp_total_current': total_i,
         }
 
