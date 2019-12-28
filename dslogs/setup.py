@@ -51,8 +51,7 @@ setup(
     install_requires=['arrow', 'dslogparser'],
     keywords=['FRC', 'logfiles'],
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
-        'Environment :: Console',
+        'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
         'Intended Audience :: Education',
         'License :: OSI Approved :: MIT License',
