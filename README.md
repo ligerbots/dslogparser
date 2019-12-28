@@ -1,5 +1,5 @@
-# dslog2csv
-Convert FRC DSLog files to CSV file
+# dslogparser
+Parse FRC DSLog files. The included script dslog2csv.py will output DSLog files as CSV files.
 
 ```
 usage: dslog2csv.py [-h] [--one-output-per-file] [--output OUTPUT] [--event]
