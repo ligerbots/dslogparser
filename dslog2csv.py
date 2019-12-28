@@ -9,6 +9,8 @@ import sys
 import os
 import os.path
 import csv
+from typing import Optional, IO, Any
+
 from dslogparser import DSLogParser, DSEventParser
 
 # Python 2 CSV writer wants binary output, but Py3 want regular
@@ -29,7 +31,7 @@ OUTPUT_COLUMNS = [
 ]
 
 
-def find_event_file(filename):
+def find_event_file(filename: str) -> Optional[str]:
     evtname = os.path.splitext(filename)[0] + '.dsevents'
     if os.path.exists(evtname):
         return evtname
@@ -65,9 +67,10 @@ if __name__ == '__main__':
         args.files = newfiles
 
     if args.event:
-        dsparser = DSEventParser(args.files[0])
-        for rec in dsparser.read_records():
-            print(rec['time'], rec['message'])
+        evtparser = DSEventParser(args.files[0])
+        for rec in evtparser.read_records():
+            if rec:
+                print(rec['time'], rec['message'])
 
     else:
         col = ['inputfile', ]
@@ -75,6 +78,8 @@ if __name__ == '__main__':
             col.extend(('match_name', 'field_time'))
         col.extend(OUTPUT_COLUMNS)
 
+        outstrm: Optional[IO[Any]] = None
+        outcsv: Optional[csv.DictWriter] = None
         if not args.one_output_per_file:
             if args.output:
                 outstrm = open(args.output, 'wb' if _USE_BINARY_OUTPUT else 'w')
@@ -82,9 +87,6 @@ if __name__ == '__main__':
                 outstrm = sys.stdout
             outcsv = csv.DictWriter(outstrm, fieldnames=col, extrasaction='ignore')
             outcsv.writeheader()
-        else:
-            outstrm = None
-            outcsv = None
 
         for fn in args.files:
             match_info = None
@@ -107,6 +109,8 @@ if __name__ == '__main__':
 
             dsparser = DSLogParser(fn)
             for rec in dsparser.read_records():
+                if not rec:
+                    continue
                 rec['inputfile'] = fn
                 if match_info:
                     rec.update(match_info)
@@ -115,9 +119,11 @@ if __name__ == '__main__':
                 for i in range(16):
                     rec['pdp_{}'.format(i)] = rec['pdp_currents'][i]
 
+                if outcsv is None:
+                    raise RuntimeError("Output file was not opened")
                 outcsv.writerow(rec)
 
             dsparser.close()
 
-        if args.output or args.one_output_per_file:
+        if outstrm is not None and (args.output or args.one_output_per_file):
             outstrm.close()

@@ -11,15 +11,16 @@ import datetime
 import math
 import re
 import struct
+from typing import BinaryIO, Optional, Generator, Any, Dict, List
 
-import bitstring
+import bitstring                # type: ignore
 
 
 MAX_INT64 = 2**63 - 1
 DSLOG_TIMESTEP = 0.020
 
 
-def read_timestamp(strm):
+def read_timestamp(strm: BinaryIO) -> Optional[datetime.datetime]:
     # Time stamp: int64, uint64
     b1 = strm.read(8)
     b2 = strm.read(8)
@@ -35,20 +36,20 @@ def read_timestamp(strm):
 
 
 class DSLogParser():
-    def __init__(self, input_file):
+    def __init__(self, input_file: str):
         self.strm = open(input_file, 'rb')
 
         self.record_time_offset = datetime.timedelta(seconds=DSLOG_TIMESTEP)
-        self.curr_time = None
 
+        # initializes version and curr_time
         self.read_header()
         return
 
-    def close(self):
+    def close(self) -> None:
         self.strm.close()
         return
 
-    def read_records(self):
+    def read_records(self) -> Generator[Optional[Dict[str, Any]], None, None]:
         if self.version != 3:
             raise Exception("Unknown file version number {}".format(self.version))
 
@@ -59,7 +60,7 @@ class DSLogParser():
             yield r
         return
 
-    def read_header(self):
+    def read_header(self) -> None:
         self.version = struct.unpack('>i', self.strm.read(4))[0]
         if self.version != 3:
             raise Exception("Unknown file version number {}".format(self.version))
@@ -67,7 +68,7 @@ class DSLogParser():
         self.curr_time = read_timestamp(self.strm)
         return
 
-    def read_record_v3(self):
+    def read_record_v3(self) -> Optional[Dict[str, Any]]:
         data_bytes = self.strm.read(10)
         if not data_bytes or len(data_bytes) < 10:
             return None
@@ -79,15 +80,16 @@ class DSLogParser():
         res = {'time': self.curr_time}
         res.update(self.parse_data_v3(data_bytes))
         res.update(self.parse_pdp_v3(pdp_bytes))
-        self.curr_time += self.record_time_offset
+        if self.curr_time is not None:
+            self.curr_time += self.record_time_offset
         return res
 
     @staticmethod
-    def shifted_float(raw_value, shift_right):
+    def shifted_float(raw_value: int, shift_right: int) -> float:
         return raw_value / (2.0**shift_right)
 
     @staticmethod
-    def unpack_bits(raw_value):
+    def unpack_bits(raw_value: bytes) -> List[bool]:
         '''Unpack and invert the bits in a byte'''
 
         status_bits = bitstring.Bits(bytes=raw_value)
@@ -95,7 +97,7 @@ class DSLogParser():
         return [not b for b in status_bits]
 
     @staticmethod
-    def uint_from_bytes(bytes, offset, size_in_bits):
+    def uint_from_bytes(bytes: bytes, offset: int, size_in_bits: int) -> int:
         '''Pull out an unsigned int from an array of bytes, with arbitrary bit start and length'''
 
         first_byte = math.floor(offset / 8)
@@ -115,7 +117,7 @@ class DSLogParser():
 
         return (uint & (0xFFFF >> left_bitshift)) >> right_bitshift
 
-    def parse_data_v3(self, data_bytes):
+    def parse_data_v3(self, data_bytes: bytes) -> Dict[str, Any]:
         raw_values = struct.unpack('>BBHBcBBH', data_bytes)
         status_bits = self.unpack_bits(raw_values[4])
 
@@ -140,7 +142,7 @@ class DSLogParser():
 
         return res
 
-    def parse_pdp_v3(self, pdp_bytes):
+    def parse_pdp_v3(self, pdp_bytes: bytes) -> Dict[str, Any]:
         # from CD post https://www.chiefdelphi.com/forums/showpost.php?p=1556451&postcount=11
         # pdp_offsets = (8, 18, 28, 38, 52, 62, 72, 82, 92, 102, 116, 126, 136, 146, 156, 166)
 
@@ -178,19 +180,16 @@ class DSLogParser():
 
 
 class DSEventParser():
-    def __init__(self, input_file):
+    def __init__(self, input_file: str):
         self.strm = open(input_file, 'rb')
-        self.version = None
-        self.start_time = None
-
         self.read_header()
         return
 
-    def close(self):
+    def close(self) -> None:
         self.strm.close()
         return
 
-    def read_records(self):
+    def read_records(self) -> Generator[Optional[Dict[str, Any]], None, None]:
         if self.version != 3:
             raise Exception("Unknown file version number {}".format(self.version))
 
@@ -201,14 +200,14 @@ class DSEventParser():
             yield r
         return
 
-    def read_header(self):
+    def read_header(self) -> None:
         self.version = struct.unpack('>i', self.strm.read(4))[0]
         if self.version != 3:
             raise Exception("Unknown file version number {}".format(self.version))
         self.start_time = read_timestamp(self.strm)  # file starttime
         return
 
-    def read_record_v3(self):
+    def read_record_v3(self) -> Optional[Dict[str, Any]]:
         t = read_timestamp(self.strm)
         if t is None:
             return None
@@ -220,10 +219,12 @@ class DSEventParser():
         return {'time': t, 'message': msg}
 
     @staticmethod
-    def find_match_info(filename):
+    def find_match_info(filename: str) -> Optional[Dict[str, Any]]:
         rdr = DSEventParser(filename)
         try:
             for rec in rdr.read_records():
+                if rec is None:
+                    continue
                 m = re.match(r'FMS Connected:\s+(?P<match>.*),\s+Field Time:\s+(?P<time>[0-9/ :]*)', rec['message'])
                 if m:
                     return {'match_name': m.group('match'),
