@@ -1,28 +1,9 @@
 # dslogparser
-Parse FRC DSLog files. The included script dslog2csv.py will output DSLog files as CSV files.
+Parse FIRST FRC Driver Station log files.
 
-```
-usage: dslog2csv.py [-h] [--one-output-per-file] [--output OUTPUT] [--event]
-                    [--add-match-info] [--matches-only]
-                    files [files ...]
-
-DSLog to CSV file
-
-positional arguments:
-  files                 Input files
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --one-output-per-file
-                        Output one CSV per DSLog file
-  --output OUTPUT, -o OUTPUT
-                        Output filename (stdout otherwise)
-  --event               Input files are EVENT files
-  --add-match-info      Look for EVENT files matching DSLOG files and pull
-                        info
-  --matches-only        Ignore files which have no match info. Imples add-
-                        match-info
-```
+This repository hosts 2 PyPI packages:
+* dslogparser includes the basic parsing library, plus a command line script to output CSV files
+* dslogs contains the DSlogs class which is useful for streaming log entries to "real time" application.
 
 # Reference Sources:
   https://www.chiefdelphi.com/forums/showthread.php?p=1556451

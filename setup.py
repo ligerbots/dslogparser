@@ -40,7 +40,7 @@ else:
     __version__ = "master"
 
 # read the contents of your README file
-with open(join(setup_dir, 'README.md'), encoding='utf-8') as f:
+with open(join(setup_dir, 'README-dslogparser.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 
@@ -56,5 +56,14 @@ setup(
     license='MIT',
     packages=['dslogparser'],
     scripts=['dslog2csv.py'],
-    install_requires=['bitstring']
+    install_requires=['bitstring'],
+    keywords=['FRC', 'logfiles'],
+    classifiers=[
+        'Development Status :: 5 - Production/Stable',
+        'Environment :: Console',
+        'Intended Audience :: Developers',
+        'Intended Audience :: Education',
+        'License :: OSI Approved :: MIT License'
+        'Programming Language :: Python :: 3',
+    ]
 )
