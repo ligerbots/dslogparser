@@ -55,7 +55,7 @@ setup(
         'Environment :: Console',
         'Intended Audience :: Developers',
         'Intended Audience :: Education',
-        'License :: OSI Approved :: MIT License'
+        'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3',
     ]
 )
