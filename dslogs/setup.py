@@ -4,7 +4,7 @@ import sys
 from os.path import dirname, exists, join
 import subprocess
 
-base_package = "dslogparser"
+base_package = "dslogs"
 
 setup_dir = dirname(__file__)
 git_dir = join(setup_dir, ".git")
@@ -47,14 +47,13 @@ with open(join(setup_dir, 'README.md'), encoding='utf-8') as f:
 setup(
     name=base_package,
     version=__version__,
-    description='FIRST FRC Driver Station logs parser',
+    description='FIRST FRC Driver Station log streamer',
     author='Paul Rensing',
     author_email='prensing@ligerbots.org',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='http://github.com/ligerbots/dslogparser',
     license='MIT',
-    packages=['dslogparser'],
-    scripts=['dslog2csv.py'],
-    install_requires=['bitstring']
+    packages=['dslogs'],
+    install_requires=['arrow', 'dslogparser']
 )
