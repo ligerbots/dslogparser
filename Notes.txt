@@ -1,0 +1,8 @@
+Upload test version:
+       twine upload --repository-url https://test.pypi.org/legacy/ dist/XXX
+
+Install from test upload:
+       sudo pip3 install --index-url https://test.pypi.org/simple/ dslogparser
+       
+Upload prod version:
+       twine upload dist/XXX
