@@ -5,7 +5,6 @@
 
 # Notes on comparison to DSLog-Parse:
 # D-P has packet_loss as a *signed* integer, which makes no sense. Unsigned looks sensible.
-# D-P did not reverse the PDP values as was indicated in the CD post
 
 import datetime
 import math
@@ -154,10 +153,6 @@ class DSLogParser():
         vals = []
         for offset in pdp_offsets:
             vals.append(self.shifted_float(self.uint_from_bytes(pdp_bytes, offset, 10), 3))
-
-        # values are 15 through 0, so reverse the list
-        # note: DSLog-Reader did not reverse these. Don't know who to believe.
-        vals.reverse()
 
         total_i = 0.0
         for i in vals:
