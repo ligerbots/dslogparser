@@ -10,8 +10,11 @@ import datetime
 import math
 import re
 import struct
+import logging
 
+# not part of standard library, get from PyPI
 import bitstring
+import bitarray
 
 
 MAX_INT64 = 2**63 - 1
@@ -34,11 +37,18 @@ def read_timestamp(strm):
 
 
 class DSLogParser():
+    pd_type_lookup = {
+        33: 'rev',
+        25: 'ctre',
+        0: 'none'
+    }
+
     def __init__(self, input_file):
         self.strm = open(input_file, 'rb')
 
         self.record_time_offset = datetime.timedelta(seconds=DSLOG_TIMESTEP)
         self.curr_time = None
+        self.file_time_sec = 0
 
         self.read_header()
         return
@@ -48,11 +58,13 @@ class DSLogParser():
         return
 
     def read_records(self):
-        if self.version != 3:
-            raise Exception("Unknown file version number {}".format(self.version))
-
         while True:
-            r = self.read_record_v3()
+            if self.version == 3:
+                r = self.read_record_v3()
+            elif self.version == 4:
+                r = self.read_record_v4()
+            else:
+                raise Exception(f"Unknown file version number {self.version}")
             if r is None:
                 break
             yield r
@@ -60,11 +72,34 @@ class DSLogParser():
 
     def read_header(self):
         self.version = struct.unpack('>i', self.strm.read(4))[0]
-        if self.version != 3:
-            raise Exception("Unknown file version number {}".format(self.version))
+        if self.version not in (3, 4):
+            raise Exception(f"Unknown file version number {self.version}")
 
         self.curr_time = read_timestamp(self.strm)
         return
+
+    def read_record_v4(self):
+        res = {
+            'time': self.curr_time,
+            'file_time': self.file_time_sec
+        }
+        logging.debug(f"read record {self.curr_time}")
+
+        data_bytes = self.strm.read(10)
+        if not data_bytes or len(data_bytes) < 10:
+            return None
+        # V3 and V4 seem to have the same header
+        res.update(self.parse_data_v3(data_bytes))
+
+        # The PD data length depends on the type, so let it handle the stream
+        pd_data = self.read_pddata_v4()
+        if not pd_data:
+            raise EOFError("No data for PD device. Unexpected end of file.")
+        
+        res.update(pd_data)
+        self.curr_time += self.record_time_offset
+        self.file_time_sec += DSLOG_TIMESTEP
+        return res
 
     def read_record_v3(self):
         data_bytes = self.strm.read(10)
@@ -79,6 +114,7 @@ class DSLogParser():
         res.update(self.parse_data_v3(data_bytes))
         res.update(self.parse_pdp_v3(pdp_bytes))
         self.curr_time += self.record_time_offset
+        self.file_time_sec += DSLOG_TIMESTEP
         return res
 
     @staticmethod
@@ -161,14 +197,88 @@ class DSLogParser():
         # the scaling on R, V and T are almost certainly not correct
         # need to find a reference for those values
         res = {
-            'pdp_id': self.uint_from_bytes(pdp_bytes, 0, 8),
-            'pdp_currents': vals,
-            'pdp_resistance': self.uint_from_bytes(pdp_bytes, 176, 8),
-            'pdp_voltage': self.uint_from_bytes(pdp_bytes, 184, 8),
-            'pdp_temp': self.uint_from_bytes(pdp_bytes, 192, 8),
-            'pdp_total_current': total_i,
+            'pd_id': self.uint_from_bytes(pdp_bytes, 0, 8),
+            'pd_currents': vals,
+            'pd_resistance': self.uint_from_bytes(pdp_bytes, 176, 8),
+            'pd_voltage': self.uint_from_bytes(pdp_bytes, 184, 8),
+            'pd_temp': self.uint_from_bytes(pdp_bytes, 192, 8),
+            'pd_total_current': total_i,
         }
 
+        return res
+
+    def read_pddata_v4(self):
+        # PD header data
+        metadata = self.strm.read(4)
+        if not metadata or len(metadata) < 4:
+            return None
+        pd_type_int = self.uint_from_bytes(metadata, 3*8, 8)
+        logging.debug(f"pd_type_int = {pd_type_int}")
+        pd_type = self.pd_type_lookup.get(self.uint_from_bytes(metadata, 3*8, 8), 'none')
+        if pd_type == 'none':
+            raise Exception("Unknown PD type")
+        
+        res = {
+            'pd_id': self.uint_from_bytes(metadata, 0, 8),
+            'pd_type': pd_type,
+        }
+
+        if (pd_type == 'rev'):
+            res.update(self.read_rev_pdh_data())
+        elif (pd_type == 'ctre'):
+            res.update(self.read_ctre_pdp_data())
+    
+        res['pd_total_current'] = 0.0
+        for i in res['pd_currents']:
+            res['pd_total_current'] += i
+
+        return res
+    
+    def read_ctre_pdp_data(self):
+        raise Exception("CTRE PD type is not coded - please add!")
+
+    def read_rev_pdh_data(self):
+        # first byte is CAN Id - ignore
+        self.strm.read(1)
+
+        # messy bit shifting. Appears to use little endian, instead of big endian
+        # just duplicate the algorithm from AdvantageScope
+
+        pdh_bytes = self.strm.read(27)
+        if not pdh_bytes or len(pdh_bytes) < 27:
+            return None
+
+        bits = bitarray.bitarray()
+        for b in pdh_bytes:
+            for bit in range(8):
+                bits.append((b & (1<<bit)) != 0)
+
+        currents = []
+        for i in range(20):
+            offset = (i // 3) * 32 + (i % 3) * 10
+            curr = 0
+            for ibit in range(10):
+                curr += bits[offset + ibit] * 2**ibit
+
+            currents.append(curr / 8.0)
+
+        # secondary channels
+        pdh_bytes = self.strm.read(4)
+        if not pdh_bytes or len(pdh_bytes) < 4:
+            return None
+        for i in range(4):
+            currents.append(self.shifted_float(self.uint_from_bytes(pdh_bytes, i*8, 8), 4))
+
+        # temperature
+        pdh_bytes = self.strm.read(1)
+        if not pdh_bytes or len(pdh_bytes) < 1:
+            return None
+        
+        res = {
+            'pd_id': self.uint_from_bytes(pdh_bytes, 0, 8),
+            'pd_currents': currents,
+            'pd_temp': self.uint_from_bytes(pdh_bytes, 0, 8),
+        }
         return res
 
 
